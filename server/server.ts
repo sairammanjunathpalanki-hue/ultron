@@ -4,11 +4,15 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { fileURLToPath } from 'url';
 import { aiService } from './aiService';
 import { permissionEngine } from './permissionEngine';
 import { auditService } from './auditService';
 import { memoryService } from './memoryService';
 import { toolsService } from './toolsService';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -193,6 +197,7 @@ app.get(['/download/ULTRON.apk', '/ULTRON.apk'], (req, res) => {
   try {
     const candidatePaths = [
       path.resolve(process.cwd(), 'ULTRON.apk'),
+      path.resolve(process.cwd(), 'server/ULTRON.apk'),
       path.resolve(__dirname, '../ULTRON.apk'),
       path.resolve(__dirname, 'ULTRON.apk'),
       path.resolve(process.cwd(), 'android/app/build/outputs/apk/debug/ULTRON.apk'),
