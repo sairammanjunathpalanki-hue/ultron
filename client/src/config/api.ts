@@ -10,8 +10,8 @@
 
 const STORAGE_KEY = 'ULTRON_API_BASE_URL';
 
-// Default public remote backend URL placeholder (user can override in Settings on mobile)
-export const DEFAULT_REMOTE_BACKEND = 'https://ultron-backend.onrender.com';
+// Default verified public remote backend URL
+export const DEFAULT_REMOTE_BACKEND = 'https://ultron-command-center.onrender.com';
 
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') return '';

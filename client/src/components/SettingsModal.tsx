@@ -71,7 +71,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               type="text"
               value={backendUrl}
               onChange={(e) => setBackendUrl(e.target.value)}
-              placeholder="https://your-ultron-backend.onrender.com"
+              placeholder="https://ultron-command-center.onrender.com"
               className="w-full bg-black/70 border border-[#ffaa00]/30 rounded px-3.5 py-2 text-xs font-mono-tech text-neutral-200 focus:outline-none focus:border-[#ffaa00]"
             />
             <p className="text-[10px] font-mono-tech text-neutral-500">
@@ -89,7 +89,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               type="password"
               value={inputKey}
               onChange={(e) => setInputKey(e.target.value)}
-              placeholder="sk-proj-..."
+              placeholder="Managed by remote cloud backend"
               className="w-full bg-black/70 border border-[#ffaa00]/30 rounded px-3.5 py-2 text-xs font-mono-tech text-neutral-200 focus:outline-none focus:border-[#ffaa00]"
             />
             <p className="text-[10px] font-mono-tech text-neutral-500">
