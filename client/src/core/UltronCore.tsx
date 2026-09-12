@@ -7,6 +7,12 @@ interface UltronCoreProps {
   audioAmplitude?: number; // 0.0 to 1.0 from microphone or voice speech
   quality?: 'high' | 'medium' | 'low';
   onTap?: () => void;
+  // Gesture Continuous & Trigger Inputs
+  zoomDelta?: number;
+  panOffset?: { x: number; y: number };
+  rotationDelta?: number;
+  energyPulse?: number;
+  handPos?: { x: number; y: number };
 }
 
 export const UltronCore: React.FC<UltronCoreProps> = ({
@@ -14,6 +20,11 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
   audioAmplitude = 0.0,
   quality = 'high',
   onTap,
+  zoomDelta = 0,
+  panOffset = { x: 0, y: 0 },
+  rotationDelta = 0,
+  energyPulse = 0,
+  handPos,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const animFrameId = useRef<number | null>(null);
@@ -21,8 +32,19 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
   // References for dynamic animation updates
   const stateRef = useRef<UltronState>(state);
   const audioAmpRef = useRef<number>(audioAmplitude);
+  const zoomDeltaRef = useRef<number>(zoomDelta);
+  const panOffsetRef = useRef<{ x: number; y: number }>(panOffset);
+  const rotationDeltaRef = useRef<number>(rotationDelta);
+  const energyPulseRef = useRef<number>(energyPulse);
+  const handPosRef = useRef<{ x: number; y: number } | undefined>(handPos);
+
   stateRef.current = state;
   audioAmpRef.current = audioAmplitude;
+  zoomDeltaRef.current = zoomDelta;
+  panOffsetRef.current = panOffset;
+  rotationDeltaRef.current = rotationDelta;
+  energyPulseRef.current = energyPulse;
+  handPosRef.current = handPos;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -52,8 +74,11 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
     container.appendChild(renderer.domElement);
 
     // 3. Central Core Spheres (Layered Glow & Core)
+    const masterGroup = new THREE.Group();
+    scene.add(masterGroup);
+
     const coreGroup = new THREE.Group();
-    scene.add(coreGroup);
+    masterGroup.add(coreGroup);
 
     // Inner bright core
     const innerCoreGeo = new THREE.SphereGeometry(1.6, 32, 32);
@@ -87,9 +112,9 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
     const glowSphere = new THREE.Mesh(glowGeo, glowMat);
     coreGroup.add(glowSphere);
 
-    // 4. Orbital Rings (Multi-axis holographic rings matching reference video)
+    // 4. Orbital Rings (Multi-axis holographic rings)
     const ringsGroup = new THREE.Group();
-    scene.add(ringsGroup);
+    masterGroup.add(ringsGroup);
 
     interface RingConfig {
       radius: number;
@@ -98,157 +123,164 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
       tiltZ: number;
       speed: number;
       color: number;
-      dashSize?: number;
-      gapSize?: number;
       mesh: THREE.Line;
     }
 
-    const ringConfigs: RingConfig[] = [];
-    const ringDefinitions = [
-      { r: 4.2, rx: 0.2, ry: 0.5, rz: 0.1, speed: 0.6, col: 0xffaa00 },
-      { r: 5.2, rx: Math.PI / 2.8, ry: 0.2, rz: 0.4, speed: -0.75, col: 0xff7700 },
-      { r: 6.3, rx: 0.8, ry: Math.PI / 3, rz: 0.3, speed: 0.9, col: 0xffbb22 },
-      { r: 7.4, rx: Math.PI / 1.8, ry: 0.7, rz: 0.2, speed: -0.5, col: 0xff9900 },
-      { r: 8.6, rx: 0.4, ry: Math.PI / 1.5, rz: 0.6, speed: 0.7, col: 0xffaa00 },
-      { r: 10.0, rx: Math.PI / 4, ry: Math.PI / 4, rz: 0, speed: -0.4, col: 0xff6600 },
+    const ringDefs = [
+      { radius: 4.0, tiltX: 0.2, tiltY: 0.0, tiltZ: 0.1, speed: 1.0, color: 0xffaa00 },
+      { radius: 5.2, tiltX: 1.1, tiltY: 0.4, tiltZ: 0.3, speed: -0.8, color: 0xff8800 },
+      { radius: 6.4, tiltX: 0.5, tiltY: 1.2, tiltZ: 0.6, speed: 1.2, color: 0xffcc33 },
+      { radius: 7.8, tiltX: 1.4, tiltY: 0.8, tiltZ: 0.9, speed: -0.6, color: 0xff6600 },
     ];
 
-    ringDefinitions.forEach((def) => {
-      const curve = new THREE.EllipseCurve(0, 0, def.r, def.r, 0, 2 * Math.PI, false, 0);
-      const points = curve.getPoints(120);
-      const ringGeo = new THREE.BufferGeometry().setFromPoints(points);
-
-      const ringMat = new THREE.LineDashedMaterial({
-        color: def.col,
-        linewidth: 1.5,
-        scale: 1,
+    const ringConfigs: RingConfig[] = ringDefs.map((def) => {
+      const curve = new THREE.EllipseCurve(0, 0, def.radius, def.radius, 0, 2 * Math.PI, false, 0);
+      const points = curve.getPoints(128);
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineDashedMaterial({
+        color: def.color,
         dashSize: 0.8,
-        gapSize: 0.25,
+        gapSize: 0.3,
         transparent: true,
         opacity: 0.65,
         blending: THREE.AdditiveBlending,
       });
 
-      const line = new THREE.Line(ringGeo, ringMat);
-      line.computeLineDistances();
-      line.rotation.set(def.rx, def.ry, def.rz);
-      ringsGroup.add(line);
+      const mesh = new THREE.Line(geometry, material);
+      mesh.computeLineDistances();
+      mesh.rotation.x = def.tiltX;
+      mesh.rotation.y = def.tiltY;
+      mesh.rotation.z = def.tiltZ;
+      ringsGroup.add(mesh);
 
-      ringConfigs.push({
-        radius: def.r,
-        tiltX: def.rx,
-        tiltY: def.ry,
-        tiltZ: def.rz,
-        speed: def.speed,
-        color: def.col,
-        mesh: line,
-      });
+      return { ...def, mesh };
     });
 
-    // 5. Dense Particle Cloud (Thousands of gold/orange particles orbiting the center)
-    const particleCount = quality === 'high' ? 3500 : quality === 'medium' ? 2200 : 1200;
+    // Outer HUD circle with ticks
+    const hudRingCurve = new THREE.EllipseCurve(0, 0, 9.2, 9.2, 0, 2 * Math.PI, false, 0);
+    const hudRingGeo = new THREE.BufferGeometry().setFromPoints(hudRingCurve.getPoints(96));
+    const hudRingMat = new THREE.LineBasicMaterial({
+      color: 0xffaa00,
+      transparent: true,
+      opacity: 0.3,
+    });
+    const hudRing = new THREE.Line(hudRingGeo, hudRingMat);
+    masterGroup.add(hudRing);
+
+    // 5. Energy Pulse Expanding Ring (Triggered by gestures)
+    const pulseRingCurve = new THREE.EllipseCurve(0, 0, 1.0, 1.0, 0, 2 * Math.PI, false, 0);
+    const pulseRingGeo = new THREE.BufferGeometry().setFromPoints(pulseRingCurve.getPoints(64));
+    const pulseRingMat = new THREE.LineBasicMaterial({
+      color: 0xffe680,
+      transparent: true,
+      opacity: 0.0,
+      blending: THREE.AdditiveBlending,
+    });
+    const pulseRing = new THREE.Line(pulseRingGeo, pulseRingMat);
+    masterGroup.add(pulseRing);
+
+    // 6. Volumetric Holographic Particle Swarm
+    const particleCount = quality === 'high' ? 3200 : quality === 'medium' ? 2000 : 1000;
     const particleGeo = new THREE.BufferGeometry();
     const particlePos = new Float32Array(particleCount * 3);
-    const particleVel = new Float32Array(particleCount * 3);
-    const particleSizes = new Float32Array(particleCount);
-    const particleColors = new Float32Array(particleCount * 3);
+    const particleCol = new Float32Array(particleCount * 3);
 
-    const baseColor1 = new THREE.Color(0xffaa00);
-    const baseColor2 = new THREE.Color(0xff4400);
-    const brightColor = new THREE.Color(0xffe680);
+    const cGold = new THREE.Color(0xffaa00);
+    const cAmber = new THREE.Color(0xff6600);
+    const cWhite = new THREE.Color(0xffffff);
 
     for (let i = 0; i < particleCount; i++) {
-      // Spherical shell distribution with variance
-      const radius = 2.5 + Math.pow(Math.random(), 1.5) * 8.5;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(Math.random() * 2 - 1);
+      const u = Math.random();
+      const v = Math.random();
+      const theta = u * 2.0 * Math.PI;
+      const phi = Math.acos(2.0 * v - 1.0);
+      const r = Math.cbrt(Math.random()) * 8.5 + 2.0;
 
-      const x = radius * Math.sin(phi) * Math.cos(theta);
-      const y = radius * Math.sin(phi) * Math.sin(theta);
-      const z = radius * Math.cos(phi);
+      const sinPhi = Math.sin(phi);
+      const x = r * sinPhi * Math.cos(theta);
+      const y = r * sinPhi * Math.sin(theta);
+      const z = r * Math.cos(phi);
 
       particlePos[i * 3] = x;
       particlePos[i * 3 + 1] = y;
       particlePos[i * 3 + 2] = z;
 
-      // Angular orbital velocities
-      particleVel[i * 3] = (Math.random() - 0.5) * 0.02;
-      particleVel[i * 3 + 1] = (Math.random() - 0.5) * 0.02;
-      particleVel[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
-
-      particleSizes[i] = Math.random() * 2.2 + 0.8;
-
-      const mixed = Math.random() > 0.8 ? brightColor : Math.random() > 0.4 ? baseColor1 : baseColor2;
-      particleColors[i * 3] = mixed.r;
-      particleColors[i * 3 + 1] = mixed.g;
-      particleColors[i * 3 + 2] = mixed.b;
+      const colChoice = Math.random();
+      const c = colChoice > 0.85 ? cWhite : colChoice > 0.45 ? cGold : cAmber;
+      particleCol[i * 3] = c.r;
+      particleCol[i * 3 + 1] = c.g;
+      particleCol[i * 3 + 2] = c.b;
     }
 
     particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
-    particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
-
-    // Particle Material with circular texture
-    const canvas = document.createElement('canvas');
-    canvas.width = 32;
-    canvas.height = 32;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
-      grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-      grad.addColorStop(0.3, 'rgba(255, 170, 0, 0.8)');
-      grad.addColorStop(0.8, 'rgba(255, 80, 0, 0.2)');
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 32, 32);
-    }
-    const particleTex = new THREE.CanvasTexture(canvas);
+    particleGeo.setAttribute('color', new THREE.BufferAttribute(particleCol, 3));
 
     const particleMat = new THREE.PointsMaterial({
-      size: 0.28,
-      map: particleTex,
-      transparent: true,
+      size: quality === 'high' ? 0.09 : 0.12,
       vertexColors: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-
-    const particles = new THREE.Points(particleGeo, particleMat);
-    scene.add(particles);
-
-    // 6. Exterior Circular Hologram HUD Overlay Rings (Flat plane facing camera)
-    const hudRingGeo = new THREE.RingGeometry(11.2, 11.25, 64);
-    const hudRingMat = new THREE.MeshBasicMaterial({
-      color: 0xff8800,
-      side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.25,
+      opacity: 0.75,
       blending: THREE.AdditiveBlending,
     });
-    const hudRing = new THREE.Mesh(hudRingGeo, hudRingMat);
-    scene.add(hudRing);
 
-    // Resize Handler
+    const particleSystem = new THREE.Points(particleGeo, particleMat);
+    masterGroup.add(particleSystem);
+
+    // Dynamic scale and pan variables
+    let currentZoom = 1.0;
+    let currentPan = { x: 0, y: 0 };
+    let currentRotZ = 0;
+    let pulseProgress = 1.0; // 0.0 to 1.0
+    let lastHandledPulse = 0;
+
+    // Handle Window Resize
     const handleResize = () => {
       if (!container) return;
-      const w = container.clientWidth || window.innerWidth;
-      const h = container.clientHeight || window.innerHeight;
-      camera.aspect = w / h;
+      const newW = container.clientWidth || window.innerWidth;
+      const newH = container.clientHeight || window.innerHeight;
+      camera.aspect = newW / newH;
       camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+      renderer.setSize(newW, newH);
     };
     window.addEventListener('resize', handleResize);
 
-    // 7. Animation Loop with AI State Transitions
-    let clock = new THREE.Clock();
-    let pulseTime = 0;
+    // 7. Animation Loop
+    const clock = new THREE.Clock();
 
     const animate = () => {
       animFrameId.current = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-      const elapsed = clock.getElapsedTime();
 
+      const elapsed = clock.getElapsedTime();
       const currentState = stateRef.current;
       const audioAmp = audioAmpRef.current;
+
+      // Check for energy pulse triggers
+      if (energyPulseRef.current !== lastHandledPulse) {
+        lastHandledPulse = energyPulseRef.current;
+        pulseProgress = 0.0;
+      }
+
+      // Smoothly update zoom with zoomDelta input
+      if (zoomDeltaRef.current !== 0) {
+        currentZoom += zoomDeltaRef.current * 0.15;
+        currentZoom = Math.max(0.45, Math.min(2.8, currentZoom));
+      }
+
+      // Smoothly update pan
+      const targetPan = panOffsetRef.current;
+      currentPan.x += (targetPan.x - currentPan.x) * 0.15;
+      currentPan.y += (-targetPan.y - currentPan.y) * 0.15; // Invert Y for 3D screen space
+
+      // Smoothly update rotation
+      if (rotationDeltaRef.current !== 0) {
+        currentRotZ += rotationDeltaRef.current * 0.2;
+      }
+
+      // Apply zoom & pan to master group
+      masterGroup.scale.set(currentZoom, currentZoom, currentZoom);
+      masterGroup.position.x = currentPan.x * 4.0;
+      masterGroup.position.y = currentPan.y * 4.0;
+      masterGroup.rotation.z = currentRotZ;
 
       // Speed multipliers based on state
       let speedMult = 1.0;
@@ -285,7 +317,7 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
         case 'WAITING_FOR_CONFIRMATION':
           speedMult = 0.25;
           coreScale = 1.0 + Math.sin(elapsed * 4) * 0.12;
-          glowColor = new THREE.Color(0xffcc00); // Glowing amber/gold warning
+          glowColor = new THREE.Color(0xffcc00);
           break;
         case 'STOPPED':
           speedMult = 0.15;
@@ -296,6 +328,17 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
           coreScale = 1.0 + Math.sin(elapsed * 10) * 0.1;
           glowColor = new THREE.Color(0xff2222);
           break;
+      }
+
+      // Energy Pulse Animation
+      if (pulseProgress < 1.0) {
+        pulseProgress += 0.035;
+        const pScale = 1.0 + pulseProgress * 12.0;
+        pulseRing.scale.set(pScale, pScale, pScale);
+        pulseRingMat.opacity = Math.max(0, 0.9 * (1.0 - pulseProgress));
+        speedMult *= 1.8;
+      } else {
+        pulseRingMat.opacity = 0.0;
       }
 
       // Apply Core Scaling & Colors
@@ -309,25 +352,20 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
       coreGroup.rotation.x = Math.sin(elapsed * 0.5) * 0.1;
 
       // Animate Orbital Rings
-      ringConfigs.forEach((rc, idx) => {
+      ringConfigs.forEach((rc) => {
         rc.mesh.rotation.z += rc.speed * 0.008 * speedMult;
         rc.mesh.rotation.y += rc.speed * 0.005 * speedMult;
-        
-        // Highlight active ring during execution
-        if (currentState === 'EXECUTING' && idx === 2) {
-          (rc.mesh.material as THREE.LineDashedMaterial).color.setHex(0xffffff);
-          (rc.mesh.material as THREE.LineDashedMaterial).opacity = 0.95;
-        } else {
-          (rc.mesh.material as THREE.LineDashedMaterial).color.setHex(rc.color);
-          (rc.mesh.material as THREE.LineDashedMaterial).opacity = 0.65;
-        }
       });
 
       // Animate HUD Outer Ring
       hudRing.rotation.z += 0.002 * speedMult;
 
-      // Animate Particles
+      // Animate Particles with optional Hand Attraction
       const positions = particleGeo.attributes.position.array as Float32Array;
+      const hp = handPosRef.current;
+      const hand3dX = hp ? (hp.x - 0.5) * 14 : 0;
+      const hand3dY = hp ? -(hp.y - 0.5) * 14 : 0;
+
       for (let i = 0; i < particleCount; i++) {
         const i3 = i * 3;
         let px = positions[i3];
@@ -339,11 +377,20 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
         const cosA = Math.cos(angle);
         const sinA = Math.sin(angle);
 
-        const newX = px * cosA - pz * sinA;
-        const newZ = px * sinA + pz * cosA;
+        let newX = px * cosA - pz * sinA;
+        let newZ = px * sinA + pz * cosA;
+        let newY = py + Math.sin(elapsed * 2 + i) * 0.003;
 
-        // Subtle vertical bobbing
-        const newY = py + Math.sin(elapsed * 2 + i) * 0.003;
+        // Subtle gravitational pull toward hand coordinates
+        if (hp) {
+          const dx = hand3dX - newX;
+          const dy = hand3dY - newY;
+          const distSq = dx * dx + dy * dy;
+          if (distSq < 30) {
+            newX += dx * 0.012;
+            newY += dy * 0.012;
+          }
+        }
 
         positions[i3] = newX;
         positions[i3 + 1] = newY;

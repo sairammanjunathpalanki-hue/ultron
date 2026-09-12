@@ -252,6 +252,18 @@ app.post('/api/settings', (req, res) => {
   });
 });
 
+// Serve client static assets if available (Production or local bundle)
+const clientDist = path.resolve(process.cwd(), 'dist/client');
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/download') || req.path.startsWith('/ULTRON.apk')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
+
 function getLanIp(): string {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {

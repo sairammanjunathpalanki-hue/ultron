@@ -53,7 +53,9 @@ export type GestureType =
   | 'POINT_UP'
   | 'POINT_DOWN'
   | 'FIST'
-  | 'WAVE';
+  | 'WAVE'
+  | 'SWIPE_LEFT'
+  | 'SWIPE_RIGHT';
 
 export interface VisionTrackingState {
   faceDetected: boolean;

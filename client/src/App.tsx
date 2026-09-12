@@ -21,9 +21,17 @@ export const App: React.FC = () => {
 
   // Subsystems & Panels
   const [isCameraActive, setIsCameraActive] = useState<boolean>(true);
-  const [isActivityOpen, setIsActivityOpen] = useState<boolean>(true);
+  const [isActivityOpen, setIsActivityOpen] = useState<boolean>(false);
   const [isMemoryOpen, setIsMemoryOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+
+  // Real-Time Gesture Continuous Transforms & Interactive 3D State
+  const [gestureZoomDelta, setGestureZoomDelta] = useState<number>(0);
+  const [gesturePanOffset, setGesturePanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [gestureRotationDelta, setGestureRotationDelta] = useState<number>(0);
+  const [energyPulse, setEnergyPulse] = useState<number>(0);
+  const [handPos, setHandPos] = useState<{ x: number; y: number } | undefined>(undefined);
+  const [gestureFeedback, setGestureFeedback] = useState<string | null>(null);
 
   // Configuration
   const [apiKey, setApiKey] = useState<string>('');
@@ -136,13 +144,12 @@ export const App: React.FC = () => {
     };
   }, [ultronState]);
 
-  // Command Execution Handler
-  const handleSendCommand = async (command: string) => {
-    setLastUserMsg(command);
+  // Main Command Pipeline
+  const handleSendCommand = async (commandText: string) => {
+    setLastUserMsg(commandText);
     setUltronState('THINKING');
 
-    // Emergency STOP keyword check in user speech
-    const trimmed = command.trim().toUpperCase();
+    const trimmed = commandText.trim().toUpperCase();
     if (trimmed === 'STOP' || trimmed === 'CANCEL' || trimmed === 'ABORT' || trimmed === 'ULTRON STOP') {
       handleEmergencyStop();
       return;
@@ -152,7 +159,7 @@ export const App: React.FC = () => {
       const response = await fetch(apiUrl('/api/command'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command }),
+        body: JSON.stringify({ command: commandText }),
       });
 
       const data = await response.json();
@@ -166,7 +173,6 @@ export const App: React.FC = () => {
 
       setLastAssistantMsg(data.textResponse);
 
-      // Check if confirmation is required (Level 2/3)
       if (data.pendingConfirmation) {
         setPendingConfirmation(data.pendingConfirmation);
         setUltronState('WAITING_FOR_CONFIRMATION');
@@ -175,7 +181,6 @@ export const App: React.FC = () => {
         return;
       }
 
-      // Completed safely
       setUltronState('SPEAKING');
       voiceEngineRef.current?.speak(data.textResponse, () => {
         setUltronState('IDLE');
@@ -199,7 +204,7 @@ export const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approvalId, approved: true }),
       });
-      const data = await res.json();
+      await res.json();
       setPendingConfirmation(null);
       setLastAssistantMsg('Action authorized and executed successfully.');
       voiceEngineRef.current?.speak('Action authorized and executed.');
@@ -236,6 +241,12 @@ export const App: React.FC = () => {
     setUltronState('STOPPED');
     setPendingConfirmation(null);
 
+    // Reset all continuous interactive transforms
+    setGestureZoomDelta(0);
+    setGesturePanOffset({ x: 0, y: 0 });
+    setGestureRotationDelta(0);
+    setGestureFeedback('EMERGENCY STOP TRIGGERED');
+
     try {
       await fetch(apiUrl('/api/stop'), { method: 'POST' });
     } catch (_) {}
@@ -245,36 +256,100 @@ export const App: React.FC = () => {
 
     setTimeout(() => {
       setUltronState('IDLE');
+      setGestureFeedback(null);
     }, 2500);
   };
 
-  // Multimodal Hand Gesture Dispatcher
+  /**
+   * Multimodal Real-Time Hand Gesture Dispatcher
+   */
   const handleGestureDetected = (gesture: GestureType) => {
     if (gesture === 'NONE') return;
 
-    // Gesture approval for pending Level 3 card
+    // Trigger visual energy pulse on 3D core
+    setEnergyPulse(Date.now());
+
+    // 1. Gesture approval / rejection for pending Level 3 modal
     if (pendingConfirmation) {
       if (gesture === 'THUMBS_UP') {
         handleConfirmAction(pendingConfirmation.id);
+        setGestureFeedback('THUMBS UP // ACTION AUTHORIZED');
+        setTimeout(() => setGestureFeedback(null), 2500);
         return;
       }
       if (gesture === 'THUMBS_DOWN') {
         handleRejectAction(pendingConfirmation.id);
+        setGestureFeedback('THUMBS DOWN // ACTION CANCELLED');
+        setTimeout(() => setGestureFeedback(null), 2500);
         return;
       }
     }
 
-    // Open Palm -> Emergency Halt / Pause
-    if (gesture === 'OPEN_PALM' && ultronState === 'EXECUTING') {
-      handleEmergencyStop();
+    // 2. SWIPE LEFT (Move interface toward the left, navigate to Activity Panel)
+    if (gesture === 'SWIPE_LEFT') {
+      setIsActivityOpen(true);
+      setIsMemoryOpen(false);
+      setGestureRotationDelta(-0.6);
+      setGestureFeedback('SWIPE LEFT // OPEN AUDIT PANEL');
+      setTimeout(() => setGestureFeedback(null), 2000);
       return;
     }
 
-    // Wave -> Wake Ultron
+    // 3. SWIPE RIGHT (Move interface toward the right, navigate to Memory Panel)
+    if (gesture === 'SWIPE_RIGHT') {
+      setIsMemoryOpen(true);
+      setIsActivityOpen(false);
+      setGestureRotationDelta(0.6);
+      setGestureFeedback('SWIPE RIGHT // OPEN MEMORY PANEL');
+      setTimeout(() => setGestureFeedback(null), 2000);
+      return;
+    }
+
+    // 4. FIST (Pause interaction / release virtual drag control)
+    if (gesture === 'FIST') {
+      setGesturePanOffset({ x: 0, y: 0 });
+      setGestureZoomDelta(0);
+      setGestureFeedback('FIST // VIRTUAL CONTROL RELEASED');
+      setTimeout(() => setGestureFeedback(null), 1500);
+      return;
+    }
+
+    // 5. OPEN PALM HOLD (Activate Ultron scanning mode)
+    if (gesture === 'OPEN_PALM') {
+      if (ultronState === 'EXECUTING') {
+        handleEmergencyStop();
+        return;
+      }
+      setGestureFeedback('OPEN PALM // HOLOGRAPHIC SCAN ACTIVE');
+      setTimeout(() => setGestureFeedback(null), 1500);
+      return;
+    }
+
+    // 6. WAVE (Wake Ultron greeting)
     if (gesture === 'WAVE' && ultronState === 'IDLE') {
       voiceEngineRef.current?.speak('Ultron online. Standing by for command.');
       setLastAssistantMsg('Optical gesture recognized: Ultron activated.');
+      setGestureFeedback('WAVE // ULTRON ACTIVATED');
+      setTimeout(() => setGestureFeedback(null), 2500);
     }
+  };
+
+  /**
+   * Handle Continuous Transform from GestureController (Continuous Pinch Zoom, Drag, Two-Hand Zoom/Rot)
+   */
+  const handleContinuousTransform = (transform: {
+    zoomDelta: number;
+    panDelta: { x: number; y: number };
+    rotationDelta: number;
+    handPos: { x: number; y: number };
+  }) => {
+    setGestureZoomDelta(transform.zoomDelta);
+    setGesturePanOffset((prev) => ({
+      x: prev.x + transform.panDelta.x * 0.05,
+      y: prev.y + transform.panDelta.y * 0.05,
+    }));
+    setGestureRotationDelta(transform.rotationDelta);
+    setHandPos(transform.handPos);
   };
 
   // Voice Push-to-Talk handlers
@@ -327,11 +402,16 @@ export const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
-      {/* 3. Central Three.js 3D Holographic AI Core */}
+      {/* 3. Central Three.js 3D Holographic AI Core with Gesture Reactivity */}
       <UltronCore
         state={ultronState}
         audioAmplitude={audioAmplitude}
         quality={graphicsQuality}
+        zoomDelta={gestureZoomDelta}
+        panOffset={gesturePanOffset}
+        rotationDelta={gestureRotationDelta}
+        energyPulse={energyPulse}
+        handPos={handPos}
         onTap={() => {
           if (isListening) {
             handlePushToTalkEnd();
@@ -347,22 +427,30 @@ export const App: React.FC = () => {
         lastAssistantMsg={lastAssistantMsg}
       />
 
-      {/* 5. Left Side: Camera & Vision Telemetry */}
+      {/* 5. Holographic Gesture Toast / Feedback Banner */}
+      {gestureFeedback && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40 px-4 py-1.5 rounded-full bg-black/80 border border-[#ffaa00] text-[#ffaa00] font-orbitron text-xs tracking-wider shadow-[0_0_20px_rgba(255,170,0,0.5)] animate-in fade-in zoom-in-95 duration-200">
+          {gestureFeedback}
+        </div>
+      )}
+
+      {/* 6. Left Side: Camera & Vision Telemetry */}
       <aside
         className="fixed left-4 top-16 z-20 transition-all duration-300 pointer-events-auto"
-        style={{ width: '280px' }}
+        style={{ width: '290px' }}
       >
         <VisionTracker
           isActive={isCameraActive}
           onToggleActive={() => setIsCameraActive(!isCameraActive)}
           onGesture={handleGestureDetected}
-          onFrameCaptured={(img) => {
+          onContinuousTransform={handleContinuousTransform}
+          onFrameCaptured={() => {
             handleSendCommand('Analyze this optical frame');
           }}
         />
       </aside>
 
-      {/* 6. Right Side: Real-time Command Audit & Tool Execution Feed */}
+      {/* 7. Right Side: Real-time Command Audit & Tool Execution Feed */}
       <ActivityPanel
         records={auditRecords}
         onClear={() => setAuditRecords([])}
@@ -370,13 +458,13 @@ export const App: React.FC = () => {
         onToggle={() => setIsActivityOpen(!isActivityOpen)}
       />
 
-      {/* 7. Memory Drawer (Collapsible) */}
+      {/* 8. Memory Drawer (Collapsible) */}
       <MemoryPanel
         isOpen={isMemoryOpen}
         onToggle={() => setIsMemoryOpen(!isMemoryOpen)}
       />
 
-      {/* 8. Bottom HUD Command & Audio Interface */}
+      {/* 9. Bottom HUD Command & Audio Interface */}
       <BottomControl
         onSendCommand={handleSendCommand}
         onEmergencyStop={handleEmergencyStop}
@@ -389,14 +477,14 @@ export const App: React.FC = () => {
         ultronState={ultronState}
       />
 
-      {/* 9. Visual Confirmation Card for Level 2 & 3 Actions */}
+      {/* 10. Visual Confirmation Card for Level 2 & 3 Actions */}
       <ConfirmationModal
         request={pendingConfirmation}
         onConfirm={handleConfirmAction}
         onReject={handleRejectAction}
       />
 
-      {/* 10. Settings Configuration Modal */}
+      {/* 11. Settings Configuration Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -410,4 +498,5 @@ export const App: React.FC = () => {
     </main>
   );
 };
+
 export default App;
