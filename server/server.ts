@@ -190,23 +190,35 @@ app.get('/api/files/download', (req, res) => {
 
 // Direct APK Download endpoint
 app.get(['/download/ULTRON.apk', '/ULTRON.apk'], (req, res) => {
-  const candidatePaths = [
-    path.resolve(process.cwd(), 'ULTRON.apk'),
-    path.resolve(__dirname, '../ULTRON.apk'),
-    path.resolve(__dirname, 'ULTRON.apk'),
-    path.resolve(process.cwd(), 'android/app/build/outputs/apk/debug/ULTRON.apk'),
-    path.resolve(process.cwd(), 'android/app/build/outputs/apk/debug/app-debug.apk')
-  ];
+  try {
+    const candidatePaths = [
+      path.resolve(process.cwd(), 'ULTRON.apk'),
+      path.resolve(__dirname, '../ULTRON.apk'),
+      path.resolve(__dirname, 'ULTRON.apk'),
+      path.resolve(process.cwd(), 'android/app/build/outputs/apk/debug/ULTRON.apk'),
+      path.resolve(process.cwd(), 'android/app/build/outputs/apk/debug/app-debug.apk')
+    ];
 
-  for (const p of candidatePaths) {
-    if (fs.existsSync(p)) {
-      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-      res.setHeader('Content-Disposition', 'attachment; filename="ULTRON.apk"');
-      return res.sendFile(p);
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        return res.download(p, 'ULTRON.apk', (err) => {
+          if (err && !res.headersSent) {
+            console.error('[Download] Error sending file:', err);
+            res.status(500).send(`Error downloading APK: ${err.message}`);
+          }
+        });
+      }
     }
-  }
 
-  res.status(404).send('APK not found. Please run assembleDebug first.');
+    res.status(404).json({
+      error: 'APK not found. Please run assembleDebug first.',
+      checkedPaths: candidatePaths,
+      cwd: process.cwd(),
+      dir: __dirname
+    });
+  } catch (err: any) {
+    res.status(500).send(`Server error: ${err.message}`);
+  }
 });
 
 // Vision Frame Analysis

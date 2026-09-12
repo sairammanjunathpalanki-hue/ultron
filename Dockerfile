@@ -21,6 +21,7 @@ COPY server/ ./server/
 COPY shared/ ./shared/
 COPY tsconfig.json ./
 COPY ULTRON.apk ./ULTRON.apk
+COPY ULTRON.apk ./server/ULTRON.apk
 
 # Create sandbox and logs directories
 RUN mkdir -p /app/sandbox /app/logs /app/data
