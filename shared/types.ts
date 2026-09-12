@@ -1,5 +1,6 @@
 export type UltronState = 
   | 'IDLE'
+  | 'WAKE_DETECTED'
   | 'LISTENING'
   | 'THINKING'
   | 'EXECUTING'

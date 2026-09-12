@@ -46,8 +46,10 @@ export const App: React.FC = () => {
   const [isListening, setIsListening] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
 
   const voiceEngineRef = useRef<VoiceEngine | null>(null);
+  const conversationalFollowupTimer = useRef<any>(null);
 
   // Network offline listener
   useEffect(() => {
@@ -106,12 +108,24 @@ export const App: React.FC = () => {
   // Initialize Voice Engine
   useEffect(() => {
     const voiceEngine = new VoiceEngine({
+      onWakeWordDetected: (phrase: string) => {
+        setUltronState('WAKE_DETECTED');
+        setEnergyPulse(Date.now());
+        setLastAssistantMsg('Listening...');
+        voiceEngine.speak('Yes?', () => {
+          setUltronState('LISTENING');
+        });
+      },
       onTranscript: (transcript: string, isFinal: boolean) => {
         setLastUserMsg(transcript);
 
-        // Wake phrase check: e.g. "Ultron search for..." or "Ultron activate"
         const lower = transcript.toLowerCase();
-        if (lower.startsWith('ultron') || isFinal) {
+        if (lower === 'stop' || lower === 'stop ultron' || lower === 'cancel' || lower === 'abort') {
+          handleEmergencyStop();
+          return;
+        }
+
+        if (isFinal && transcript.trim().length > 1) {
           handleSendCommand(transcript);
         }
       },
@@ -121,12 +135,14 @@ export const App: React.FC = () => {
       onStateChange: (vState) => {
         if (vState === 'listening') {
           setIsListening(true);
-          if (ultronState === 'IDLE') setUltronState('LISTENING');
+          if (ultronState === 'IDLE' || ultronState === 'WAKE_DETECTED') setUltronState('LISTENING');
         } else if (vState === 'speaking') {
           setUltronState('SPEAKING');
+        } else if (vState === 'wake_detected') {
+          setUltronState('WAKE_DETECTED');
         } else if (vState === 'idle') {
           setIsListening(false);
-          if (ultronState === 'SPEAKING' || ultronState === 'LISTENING') {
+          if (ultronState === 'SPEAKING' || ultronState === 'LISTENING' || ultronState === 'WAKE_DETECTED') {
             setUltronState('IDLE');
           }
         }
@@ -144,8 +160,8 @@ export const App: React.FC = () => {
     };
   }, [ultronState]);
 
-  // Main Command Pipeline
-  const handleSendCommand = async (commandText: string) => {
+  // Main Command Pipeline (Natural Conversation + Multimodal Vision)
+  const handleSendCommand = async (commandText: string, image?: string) => {
     setLastUserMsg(commandText);
     setUltronState('THINKING');
 
@@ -155,11 +171,42 @@ export const App: React.FC = () => {
       return;
     }
 
+    // Capture vision snapshot if user is asking visual inspection
+    let imagePayload = image;
+    const lower = commandText.toLowerCase();
+    const isVisionQuery =
+      lower.includes('look at this') ||
+      lower.includes('what is this') ||
+      lower.includes('find the error') ||
+      lower.includes('read this document') ||
+      lower.includes('analyze this') ||
+      lower.includes('what do you see');
+
+    if (!imagePayload && isVisionQuery) {
+      const videoEl = document.querySelector('video') as HTMLVideoElement;
+      if (videoEl && videoEl.videoWidth > 0) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = videoEl.videoWidth;
+          canvas.height = videoEl.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(videoEl, 0, 0);
+            imagePayload = canvas.toDataURL('image/jpeg', 0.75);
+          }
+        } catch (_) {}
+      }
+    }
+
     try {
       const response = await fetch(apiUrl('/api/command'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: commandText }),
+        body: JSON.stringify({
+          command: commandText,
+          history: chatHistory.slice(-8),
+          image: imagePayload,
+        }),
       });
 
       const data = await response.json();
@@ -173,6 +220,13 @@ export const App: React.FC = () => {
 
       setLastAssistantMsg(data.textResponse);
 
+      // Keep multi-turn context
+      setChatHistory((prev) => [
+        ...prev,
+        { role: 'user', content: commandText },
+        { role: 'assistant', content: data.textResponse },
+      ]);
+
       if (data.pendingConfirmation) {
         setPendingConfirmation(data.pendingConfirmation);
         setUltronState('WAITING_FOR_CONFIRMATION');
@@ -183,7 +237,15 @@ export const App: React.FC = () => {
 
       setUltronState('SPEAKING');
       voiceEngineRef.current?.speak(data.textResponse, () => {
-        setUltronState('IDLE');
+        // Hands-free follow-up: stay in LISTENING for 7.5 seconds
+        setUltronState('LISTENING');
+        if (conversationalFollowupTimer.current) {
+          clearTimeout(conversationalFollowupTimer.current);
+        }
+        conversationalFollowupTimer.current = setTimeout(() => {
+          setUltronState((curr) => (curr === 'LISTENING' ? 'IDLE' : curr));
+          voiceEngineRef.current?.setWakeActive(false);
+        }, 7500);
       });
 
       fetchAuditRecords();
@@ -401,6 +463,36 @@ export const App: React.FC = () => {
         ultronState={ultronState}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
+
+      {/* 2.5 Futuristic Voice State & Privacy HUD Indicator */}
+      <div className="absolute top-14 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3.5 py-1 rounded-full bg-black/60 border border-white/10 backdrop-blur-md text-[11px] font-mono tracking-widest text-white/75 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+        <span
+          className={`w-2 h-2 rounded-full ${
+            isMuted
+              ? 'bg-red-500'
+              : ultronState === 'WAKE_DETECTED'
+              ? 'bg-[#ffcc00] animate-ping'
+              : ultronState === 'LISTENING'
+              ? 'bg-[#00e5ff] animate-pulse shadow-[0_0_8px_#00e5ff]'
+              : ultronState === 'SPEAKING'
+              ? 'bg-[#ffaa00] animate-pulse shadow-[0_0_8px_#ffaa00]'
+              : 'bg-emerald-400'
+          }`}
+        />
+        <span>
+          {isMuted
+            ? 'MIC MUTED'
+            : ultronState === 'WAKE_DETECTED'
+            ? 'WAKE DETECTED // ULTRON ACTIVE'
+            : ultronState === 'LISTENING'
+            ? 'LISTENING // SPEAK NATURALLY'
+            : ultronState === 'THINKING'
+            ? 'REASONING // GPT-6 ASTRA'
+            : ultronState === 'SPEAKING'
+            ? 'RESPONDING // BARGE-IN READY'
+            : "STANDBY // SAY 'ULTRON'"}
+        </span>
+      </div>
 
       {/* 3. Central Three.js 3D Holographic AI Core with Gesture Reactivity */}
       <UltronCore

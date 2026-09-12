@@ -293,6 +293,12 @@ export const UltronCore: React.FC<UltronCoreProps> = ({
           speedMult = 0.8;
           coreScale = 1.0 + Math.sin(elapsed * 2) * 0.04;
           break;
+        case 'WAKE_DETECTED':
+          speedMult = 3.5;
+          particleSwirl = 3.5;
+          coreScale = 1.35 + Math.sin(elapsed * 12) * 0.15;
+          glowColor = new THREE.Color(0xffcc00);
+          break;
         case 'LISTENING':
           speedMult = 1.2;
           coreScale = 1.05 + audioAmp * 0.65;

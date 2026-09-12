@@ -62,10 +62,10 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// Primary Command Dispatcher (Voice / Text)
+// Primary Command Dispatcher (Voice / Text / Multimodal Vision)
 app.post('/api/command', async (req, res) => {
   try {
-    const { command, history } = req.body;
+    const { command, history, image } = req.body;
     if (!command || typeof command !== 'string') {
       return res.status(400).json({ error: 'Command string is required.' });
     }
@@ -90,7 +90,7 @@ app.post('/api/command', async (req, res) => {
       });
     }
 
-    const result = await aiService.processCommand(command, history || []);
+    const result = await aiService.processCommand(command, history || [], image);
     res.json(result);
   } catch (err: any) {
     console.error('[Server] /api/command error:', err);
@@ -99,6 +99,55 @@ app.post('/api/command', async (req, res) => {
       textResponse: `Execution error encountered: ${err.message}`,
     });
   }
+});
+
+// Multimodal Vision Snapshot Analysis
+app.post('/api/vision', async (req, res) => {
+  try {
+    const { image, prompt } = req.body;
+    if (!image) {
+      return res.status(400).json({ error: 'Image data is required.' });
+    }
+    const analysis = await aiService.analyzeImage(image, prompt || 'Analyze this camera view');
+    res.json({ analysis, timestamp: Date.now() });
+  } catch (err: any) {
+    console.error('[Server] /api/vision error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Memory API with Privacy Controls
+app.get('/api/memory', (req, res) => {
+  res.json({
+    enabled: memoryService.isEnabled,
+    memories: memoryService.getAll(),
+  });
+});
+
+app.post('/api/memory', (req, res) => {
+  const { key, value, category } = req.body;
+  if (!key || !value) {
+    return res.status(400).json({ error: 'key and value required' });
+  }
+  const mem = memoryService.remember(key, value, category || 'fact');
+  res.json({ success: true, memory: mem });
+});
+
+app.delete('/api/memory/:keyOrId', (req, res) => {
+  const { keyOrId } = req.params;
+  const removed = memoryService.forget(keyOrId);
+  res.json({ success: removed });
+});
+
+app.post('/api/memory/toggle', (req, res) => {
+  const { enabled } = req.body;
+  memoryService.setEnabled(!!enabled);
+  res.json({ success: true, enabled: memoryService.isEnabled });
+});
+
+app.post('/api/memory/clear', (req, res) => {
+  memoryService.clear();
+  res.json({ success: true, message: 'All memories cleared.' });
 });
 
 // Confirmation Approval (Voice, Button, or Gesture)

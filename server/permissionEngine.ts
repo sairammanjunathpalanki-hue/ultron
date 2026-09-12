@@ -28,6 +28,8 @@ class PermissionEngine {
     switch (toolName) {
       // LEVEL 1: SAFE
       case 'search_web':
+      case 'calculate':
+      case 'get_weather':
       case 'read_file':
       case 'search_code':
       case 'read_screen':

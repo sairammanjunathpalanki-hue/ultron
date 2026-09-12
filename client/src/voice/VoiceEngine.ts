@@ -1,7 +1,8 @@
 export interface VoiceEngineCallbacks {
+  onWakeWordDetected: (phrase: string) => void;
   onTranscript: (transcript: string, isFinal: boolean) => void;
   onAudioAmplitude: (amplitude: number) => void;
-  onStateChange: (state: 'idle' | 'listening' | 'speaking' | 'error') => void;
+  onStateChange: (state: 'idle' | 'wake_detected' | 'listening' | 'speaking' | 'error') => void;
   onError: (error: string) => void;
 }
 
@@ -16,8 +17,11 @@ export class VoiceEngine {
   private callbacks: VoiceEngineCallbacks;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
 
-  public wakeWord: string = 'ultron';
-  public wakeMode: boolean = true; // Automatically triggers when starting with "Ultron..."
+  public wakeWordEnabled: boolean = true;
+  public conversationalMode: boolean = true; // Auto-listen for follow-up turns
+  private isWakeTriggered: boolean = false;
+  private silenceTimer: any = null;
+  private lastSpokenText: string = '';
 
   constructor(callbacks: VoiceEngineCallbacks) {
     this.callbacks = callbacks;
@@ -29,7 +33,7 @@ export class VoiceEngine {
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      console.warn('[VoiceEngine] Web Speech API not supported in this browser.');
+      console.warn('[VoiceEngine] Web Speech API not supported in this browser environment.');
       return;
     }
 
@@ -40,7 +44,11 @@ export class VoiceEngine {
 
     this.recognition.onstart = () => {
       this.isListening = true;
-      this.callbacks.onStateChange('listening');
+      if (this.isWakeTriggered) {
+        this.callbacks.onStateChange('listening');
+      } else {
+        this.callbacks.onStateChange('idle');
+      }
     };
 
     this.recognition.onresult = (event: any) => {
@@ -62,24 +70,79 @@ export class VoiceEngine {
         }
       }
 
-      const activeText = finalTranscript || interimTranscript;
-      if (activeText.trim()) {
-        this.callbacks.onTranscript(activeText.trim(), !!finalTranscript);
+      const rawText = (finalTranscript || interimTranscript).trim();
+      const lower = rawText.toLowerCase();
+
+      // Check for Universal STOP keyword
+      if (lower === 'stop' || lower === 'stop ultron' || lower === 'cancel' || lower === 'abort') {
+        this.stopSpeaking();
+        this.isWakeTriggered = false;
+        this.callbacks.onTranscript(rawText, true);
+        return;
+      }
+
+      // Check for Wake Words: "ultron", "hey ultron", "ok ultron"
+      if (!this.isWakeTriggered && this.wakeWordEnabled) {
+        const hasWakeWord =
+          lower.startsWith('ultron') ||
+          lower.startsWith('hey ultron') ||
+          lower.startsWith('ok ultron') ||
+          lower.includes('hey ultron') ||
+          lower === 'ultron';
+
+        if (hasWakeWord) {
+          this.isWakeTriggered = true;
+          this.playWakeChime();
+          this.callbacks.onWakeWordDetected('ultron');
+          this.callbacks.onStateChange('wake_detected');
+
+          // Extract any immediate trailing prompt: e.g. "Ultron, what is the weather?"
+          const cleanedPrompt = rawText
+            .replace(/^(hey\s+)?ultron[,.\s]*/i, '')
+            .replace(/^ok\s+ultron[,.\s]*/i, '')
+            .trim();
+
+          if (cleanedPrompt.length > 2) {
+            // Immediate command included with wake word
+            this.callbacks.onTranscript(cleanedPrompt, !!finalTranscript);
+          }
+          return;
+        }
+      }
+
+      // If active and listening
+      if (this.isWakeTriggered || !this.wakeWordEnabled) {
+        this.lastSpokenText = rawText;
+        this.callbacks.onTranscript(rawText, !!finalTranscript);
+
+        // Reset silence timer on interim speech
+        if (this.silenceTimer) clearTimeout(this.silenceTimer);
+
+        // If speech pauses for >1400ms on continuous speech, treat as turn complete
+        if (!finalTranscript && rawText.length > 3) {
+          this.silenceTimer = setTimeout(() => {
+            if (this.lastSpokenText.trim()) {
+              this.callbacks.onTranscript(this.lastSpokenText.trim(), true);
+              this.lastSpokenText = '';
+            }
+          }, 1500);
+        }
       }
     };
 
     this.recognition.onerror = (event: any) => {
-      console.warn('[VoiceEngine] Recognition error:', event.error);
       if (event.error !== 'no-speech') {
-        this.callbacks.onError(`Voice recognition error: ${event.error}`);
+        console.warn('[VoiceEngine] Recognition error:', event.error);
+        if (event.error === 'not-allowed') {
+          this.callbacks.onError('Microphone permission denied.');
+        }
       }
     };
 
     this.recognition.onend = () => {
       this.isListening = false;
-      this.callbacks.onStateChange('idle');
-      // If not manually stopped and not muted, keep listening in wake mode
-      if (this.wakeMode && !this.isMuted) {
+      // In continuous wake mode, seamlessly restart speech recognition
+      if (!this.isMuted) {
         try {
           this.recognition.start();
         } catch (_) {}
@@ -87,7 +150,48 @@ export class VoiceEngine {
     };
   }
 
-  // Initialize Microphone & Audio Analysis for Core reactivity
+  // High-Tech Synthesized Dual-Tone Wake Chime (Web Audio API)
+  public playWakeChime() {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!this.audioContext) {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+      }
+
+      const now = this.audioContext.currentTime;
+      const osc1 = this.audioContext.createOscillator();
+      const osc2 = this.audioContext.createOscillator();
+      const gainNode = this.audioContext.createGain();
+
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(440, now);
+      osc1.frequency.exponentialRampToValueAtTime(880, now + 0.12);
+
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(660, now + 0.04);
+      osc2.frequency.exponentialRampToValueAtTime(1320, now + 0.16);
+
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(0.25, now + 0.02);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+      osc1.connect(gainNode);
+      osc2.connect(gainNode);
+      gainNode.connect(this.audioContext.destination);
+
+      osc1.start(now);
+      osc2.start(now + 0.04);
+      osc1.stop(now + 0.3);
+      osc2.stop(now + 0.3);
+    } catch (err) {
+      console.warn('[VoiceEngine] Wake chime error:', err);
+    }
+  }
+
+  // Initialize Microphone & Audio Analysis for Core visual reactivity
   public async initAudioAnalyser(): Promise<boolean> {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -96,7 +200,9 @@ export class VoiceEngine {
       this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      this.audioContext = new AudioCtx();
+      if (!this.audioContext) {
+        this.audioContext = new AudioCtx();
+      }
       const source = this.audioContext.createMediaStreamSource(this.micStream);
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 256;
@@ -123,7 +229,6 @@ export class VoiceEngine {
 
       this.analyser.getByteFrequencyData(dataArray);
 
-      // Compute average RMS
       let sum = 0;
       for (let i = 0; i < dataArray.length; i++) {
         sum += dataArray[i];
@@ -136,7 +241,19 @@ export class VoiceEngine {
     checkAudio();
   }
 
-  // Start Voice Listening
+  public setWakeActive(active: boolean) {
+    this.isWakeTriggered = active;
+    if (active) {
+      this.callbacks.onStateChange('listening');
+    } else {
+      this.callbacks.onStateChange('idle');
+    }
+  }
+
+  public getIsWakeActive(): boolean {
+    return this.isWakeTriggered;
+  }
+
   public startListening() {
     if (this.isMuted) return;
     if (this.recognition && !this.isListening) {
@@ -146,7 +263,6 @@ export class VoiceEngine {
     }
   }
 
-  // Stop Voice Listening
   public stopListening() {
     if (this.recognition && this.isListening) {
       try {
@@ -156,7 +272,6 @@ export class VoiceEngine {
     this.isListening = false;
   }
 
-  // Toggle Mute
   public toggleMute(): boolean {
     this.isMuted = !this.isMuted;
     if (this.isMuted) {
@@ -165,6 +280,10 @@ export class VoiceEngine {
     } else {
       this.startListening();
     }
+    return this.isMuted;
+  }
+
+  public getIsMuted(): boolean {
     return this.isMuted;
   }
 
@@ -181,16 +300,25 @@ export class VoiceEngine {
       .replace(/https?:\/\/[^\s]+/g, 'link')
       .trim();
 
-    if (!cleanText) return;
+    if (!cleanText) {
+      if (onEnd) onEnd();
+      return;
+    }
 
     this.currentUtterance = new SpeechSynthesisUtterance(cleanText);
     this.currentUtterance.rate = 1.05;
-    this.currentUtterance.pitch = 0.95; // Slightly deeper, authoritative Ultron tone
+    this.currentUtterance.pitch = 0.95; // Calm, authoritative Ultron tone
 
-    // Try to pick an English voice
+    // Select preferred natural English voice
     const voices = window.speechSynthesis.getVoices();
     const deepVoice = voices.find(
-      (v) => v.lang.includes('en') && (v.name.includes('Male') || v.name.includes('David') || v.name.includes('Google UK English Male'))
+      (v) =>
+        v.lang.includes('en') &&
+        (v.name.includes('Male') ||
+          v.name.includes('David') ||
+          v.name.includes('Google UK English Male') ||
+          v.name.includes('Daniel') ||
+          v.name.includes('Arthur'))
     );
     if (deepVoice) {
       this.currentUtterance.voice = deepVoice;
@@ -199,12 +327,13 @@ export class VoiceEngine {
     this.callbacks.onStateChange('speaking');
 
     this.currentUtterance.onend = () => {
-      this.callbacks.onStateChange('idle');
+      this.callbacks.onStateChange(this.isWakeTriggered ? 'listening' : 'idle');
       if (onEnd) onEnd();
     };
 
     this.currentUtterance.onerror = () => {
       this.callbacks.onStateChange('idle');
+      if (onEnd) onEnd();
     };
 
     window.speechSynthesis.speak(this.currentUtterance);
@@ -215,12 +344,18 @@ export class VoiceEngine {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+    }
     this.callbacks.onStateChange('idle');
   }
 
   public dispose() {
     this.stopListening();
     this.stopSpeaking();
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+    }
     if (this.animFrameId) {
       cancelAnimationFrame(this.animFrameId);
     }

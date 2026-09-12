@@ -448,6 +448,83 @@ export class ToolsService {
     return { url: finalUrl, status: 'OPENED' };
   }
 
+  // 9. Calculator Tool (Safe Math Evaluation)
+  public calculate(expression: string): { expression: string; result: number } {
+    console.log(`[ToolsService] Calculating: "${expression}"`);
+    const sanitized = expression
+      .replace(/\s+/g, '')
+      .replace(/x/gi, '*')
+      .replace(/\^/g, '**');
+
+    if (!/^[0-9+\-*/().,%Math.sqrtcossinaelogPIE]+$/.test(sanitized)) {
+      throw new Error('Expression contains invalid characters');
+    }
+
+    try {
+      const fn = new Function('Math', `"use strict"; return (${sanitized});`);
+      const val = fn(Math);
+      if (typeof val !== 'number' || isNaN(val)) {
+        throw new Error('Invalid numeric result');
+      }
+      return { expression, result: Number(val.toFixed(6)) };
+    } catch (err: any) {
+      throw new Error(`Calculation failed for "${expression}": ${err.message}`);
+    }
+  }
+
+  // 10. Live Weather Tool (Open-Meteo REST API)
+  public async get_weather(location: string): Promise<{
+    location: string;
+    temperatureC: number;
+    apparentTemperatureC: number;
+    humidity: number;
+    windSpeedKmh: number;
+    condition: string;
+  }> {
+    console.log(`[ToolsService] Fetching live weather for: "${location}"`);
+    try {
+      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+      const geoRes = await fetch(geoUrl);
+      if (!geoRes.ok) throw new Error(`Geocoding failed with status: ${geoRes.status}`);
+      const geoData: any = await geoRes.json();
+      if (!geoData.results || geoData.results.length === 0) {
+        throw new Error(`Location "${location}" could not be found.`);
+      }
+
+      const place = geoData.results[0];
+      const lat = place.latitude;
+      const lon = place.longitude;
+      const name = `${place.name}, ${place.country || ''}`.trim();
+
+      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto`;
+      const wRes = await fetch(weatherUrl);
+      if (!wRes.ok) throw new Error(`Weather query failed with status: ${wRes.status}`);
+      const wData: any = await wRes.json();
+      const current = wData.current;
+
+      const code = current.weather_code || 0;
+      let condition = 'Clear Sky';
+      if (code === 1 || code === 2 || code === 3) condition = 'Partly Cloudy';
+      else if (code === 45 || code === 48) condition = 'Foggy';
+      else if (code >= 51 && code <= 67) condition = 'Rain / Drizzle';
+      else if (code >= 71 && code <= 77) condition = 'Snowfall';
+      else if (code >= 80 && code <= 82) condition = 'Rain Showers';
+      else if (code >= 95) condition = 'Thunderstorm';
+
+      return {
+        location: name,
+        temperatureC: current.temperature_2m,
+        apparentTemperatureC: current.apparent_temperature,
+        humidity: current.relative_humidity_2m,
+        windSpeedKmh: current.wind_speed_10m,
+        condition,
+      };
+    } catch (err: any) {
+      console.warn('[ToolsService] Weather lookup error:', err);
+      throw new Error(`Weather lookup failed: ${err.message}`);
+    }
+  }
+
   public listFiles(): Array<{ name: string; relativePath: string; size: number; modified: Date }> {
     const results: Array<{ name: string; relativePath: string; size: number; modified: Date }> = [];
     const scan = (dir: string) => {

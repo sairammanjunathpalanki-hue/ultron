@@ -5,6 +5,7 @@ import { MemoryItem } from '../shared/types';
 class MemoryService {
   private memoryFile: string;
   private memories: MemoryItem[] = [];
+  public isEnabled: boolean = true;
 
   constructor() {
     const dataDir = path.resolve(process.cwd(), 'data');
@@ -21,7 +22,6 @@ class MemoryService {
         const raw = fs.readFileSync(this.memoryFile, 'utf8');
         this.memories = JSON.parse(raw);
       } else {
-        // Initial default memories
         this.memories = [
           {
             id: 'mem_1',
@@ -54,11 +54,29 @@ class MemoryService {
     }
   }
 
+  public setEnabled(enabled: boolean): void {
+    this.isEnabled = enabled;
+  }
+
   public getAll(): MemoryItem[] {
+    if (!this.isEnabled) return [];
     return this.memories;
   }
 
-  public remember(key: string, value: string, category: 'preference' | 'project' | 'fact' | 'task' = 'fact'): MemoryItem {
+  public search(query: string): MemoryItem[] {
+    if (!this.isEnabled) return [];
+    const q = query.toLowerCase();
+    return this.memories.filter(
+      (m) => m.key.toLowerCase().includes(q) || m.value.toLowerCase().includes(q) || m.category.includes(q)
+    );
+  }
+
+  public remember(key: string, value: string, category: 'preference' | 'project' | 'fact' | 'task' = 'fact'): MemoryItem | null {
+    if (!this.isEnabled) {
+      console.log('[MemoryService] Memory is disabled by privacy policy.');
+      return null;
+    }
+
     const existingIndex = this.memories.findIndex((m) => m.key.toLowerCase() === key.toLowerCase());
     if (existingIndex >= 0) {
       this.memories[existingIndex].value = value;
