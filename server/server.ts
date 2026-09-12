@@ -190,14 +190,23 @@ app.get('/api/files/download', (req, res) => {
 
 // Direct APK Download endpoint
 app.get(['/download/ULTRON.apk', '/ULTRON.apk'], (req, res) => {
-  const apkPath = path.resolve(process.cwd(), 'ULTRON.apk');
-  if (fs.existsSync(apkPath)) {
-    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-    res.setHeader('Content-Disposition', 'attachment; filename="ULTRON.apk"');
-    res.sendFile(apkPath);
-  } else {
-    res.status(404).send('APK not found. Please run assembleDebug first.');
+  const candidatePaths = [
+    path.resolve(process.cwd(), 'ULTRON.apk'),
+    path.resolve(__dirname, '../ULTRON.apk'),
+    path.resolve(__dirname, 'ULTRON.apk'),
+    path.resolve(process.cwd(), 'android/app/build/outputs/apk/debug/ULTRON.apk'),
+    path.resolve(process.cwd(), 'android/app/build/outputs/apk/debug/app-debug.apk')
+  ];
+
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+      res.setHeader('Content-Disposition', 'attachment; filename="ULTRON.apk"');
+      return res.sendFile(p);
+    }
   }
+
+  res.status(404).send('APK not found. Please run assembleDebug first.');
 });
 
 // Vision Frame Analysis

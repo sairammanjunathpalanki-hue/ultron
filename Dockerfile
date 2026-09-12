@@ -16,10 +16,11 @@ COPY package*.json ./
 # Install production and build dependencies
 RUN npm install
 
-# Copy application backend and shared types
+# Copy application backend, shared types, and production APK
 COPY server/ ./server/
 COPY shared/ ./shared/
 COPY tsconfig.json ./
+COPY ULTRON.apk ./ULTRON.apk
 
 # Create sandbox and logs directories
 RUN mkdir -p /app/sandbox /app/logs /app/data

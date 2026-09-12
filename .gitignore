@@ -19,6 +19,8 @@ android/app/build/
 android/capacitor-cordova-android-plugins/build/
 android/local.properties
 *.apk
+!ULTRON.apk
+!android/app/build/outputs/apk/debug/ULTRON.apk
 *.aab
 
 # Production Web Build
