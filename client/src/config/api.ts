@@ -30,6 +30,8 @@ export function getApiBaseUrl(): string {
 
   // 3. Native Capacitor Android App detection
   const isCapacitorNative = 
+    Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
+    (window as any).Capacitor?.getPlatform?.() === 'android' ||
     window.location.protocol === 'capacitor:' || 
     window.location.protocol === 'ionic:' ||
     (window.location.hostname === 'localhost' && window.location.port === '');

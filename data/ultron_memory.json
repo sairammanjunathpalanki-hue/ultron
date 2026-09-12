@@ -1,5 +1,12 @@
 [
   {
+    "id": "mem_2qee8p5",
+    "key": "Ultron, remember that my hackathon project",
+    "value": "called WeatherGPT",
+    "category": "preference",
+    "createdAt": 1789194556309
+  },
+  {
     "id": "mem_r7lq5hy",
     "key": "Security Protocol",
     "value": "Level-Alpha",
