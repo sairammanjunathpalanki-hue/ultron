@@ -452,12 +452,13 @@ export class ToolsService {
   public calculate(expression: string): { expression: string; result: number } {
     console.log(`[ToolsService] Calculating: "${expression}"`);
     const sanitized = expression
+      .replace(/[?!=]/g, '')
       .replace(/\s+/g, '')
       .replace(/x/gi, '*')
       .replace(/\^/g, '**');
 
     if (!/^[0-9+\-*/().,%Math.sqrtcossinaelogPIE]+$/.test(sanitized)) {
-      throw new Error('Expression contains invalid characters');
+      throw new Error(`Expression "${sanitized}" contains invalid characters`);
     }
 
     try {

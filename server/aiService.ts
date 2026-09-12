@@ -525,8 +525,18 @@ Always state clearly what operation has been dispatched or completed.`;
 
     // 0.2 Weather
     if (lower.includes('weather') || lower.includes('temperature') || lower.includes('forecast')) {
-      const locMatch = command.match(/(?:in|for|at)\s+([a-zA-Z\s]+)/i);
-      const location = locMatch && locMatch[1] ? locMatch[1].trim() : 'San Francisco';
+      let location = 'London';
+      const inMatch = command.match(/\b(?:in|for|at)\s+([a-zA-Z\s]+)/i);
+      if (inMatch && inMatch[1]) {
+        location = inMatch[1].replace(/[?.,!]/g, '').trim();
+      } else {
+        const cleaned = command
+          .replace(/^(what is|how is|tell me|get|check)?\s*(the)?\s*(current)?\s*(weather|temperature|forecast)\s*/i, '')
+          .replace(/[?.,!]/g, '')
+          .trim();
+        if (cleaned) location = cleaned;
+      }
+
       try {
         const res = await this.executeToolDirectly('get_weather', { location }, 1, command);
         const w = res.result;
