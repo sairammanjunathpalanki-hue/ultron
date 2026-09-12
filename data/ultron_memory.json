@@ -1,0 +1,23 @@
+[
+  {
+    "id": "mem_r7lq5hy",
+    "key": "Security Protocol",
+    "value": "Level-Alpha",
+    "category": "preference",
+    "createdAt": 1789178556403
+  },
+  {
+    "id": "mem_1",
+    "key": "User Designation",
+    "value": "Commander",
+    "category": "preference",
+    "createdAt": 1789174956381
+  },
+  {
+    "id": "mem_2",
+    "key": "Operational Focus",
+    "value": "Multimodal engineering & command operations",
+    "category": "project",
+    "createdAt": 1789176756381
+  }
+]

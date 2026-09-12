@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: ultron-command-center
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/status
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: HOST
+        value: 0.0.0.0
+      - key: MODEL
+        value: gpt-6-astra
+      - key: FALLBACK_MODEL
+        value: gpt-4o
+      - key: VOICE_NAME
+        value: alloy
+      - key: VOICE_SPEED
+        value: 1.0
+      - key: OPENAI_API_KEY
+        sync: false
